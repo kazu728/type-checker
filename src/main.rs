@@ -1,11 +1,22 @@
-use core::str;
-use std::collections::HashMap;
-
 use rslint_parser::ast::Expr;
 use rslint_parser::{AstNode, Parse, SyntaxKind};
+use std::collections::HashMap;
 
 fn main() {
-    println!("Hello, world!");
+    repl();
+}
+
+fn repl() {
+    let env = Env::new(Map::Update(HashMap::new()));
+    loop {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+
+        let ast = parse_expression(input);
+        let _type = synth(env.clone(), &ast);
+        println!("{}", _type.to_string());
+    }
 }
 
 fn parse_expression(input: &str) -> Parse<Expr> {
