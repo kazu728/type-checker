@@ -1,7 +1,7 @@
 use crate::env::Env;
 use crate::types::{of_ts_type, Property, Type};
 use swc_ecma_ast::{
-    ArrowExpr, BlockStmtOrExpr, CallExpr, Expr, Ident, Lit, ObjectLit, Pat, Prop, PropName,
+    ArrowExpr, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop, PropName,
     PropOrSpread, Stmt,
 };
 
@@ -13,14 +13,14 @@ pub fn synth(env: &Env, expr: &Expr) -> Type {
         Expr::Arrow(arrow) => synth_function(env, arrow),
         Expr::Call(call) => synth_call(&env, call),
         Expr::Paren(paren) => synth(env, &paren.expr),
-        _ => unimplemented!("未対応の式: {:?}", expr),
+        _ => unimplemented!("Unsupported expression: {:?}", expr),
     }
 }
 
 fn synth_identifier(env: &Env, ident: &Ident) -> Type {
     let name = ident.sym.to_string();
     let _type = env.get(&name).unwrap_or_else(|| {
-        eprintln!("未定義の変数: {}", name);
+        eprintln!("Unbound variable: {}", name);
         std::process::exit(1);
     });
     _type.clone()
@@ -32,7 +32,7 @@ fn synth_literal(lit: &Lit) -> Type {
         Lit::Bool(_) => Type::Boolean,
         Lit::Num(_) => Type::Number,
         Lit::Str(_) => Type::String,
-        _ => unimplemented!("未対応のリテラル: {:?}", lit),
+        _ => unimplemented!("Unsupported literal: {:?}", lit),
     }
 }
 
@@ -46,7 +46,7 @@ fn synth_object(env: &Env, obj: &ObjectLit) -> Type {
                     let key = match &kv.key {
                         PropName::Ident(ident) => ident.sym.to_string(),
                         PropName::Str(str_) => str_.value.to_string(),
-                        _ => unimplemented!("未対応のプロパティキー: {:?}", kv.key),
+                        _ => unimplemented!("Unexpected key type: {:?}", kv.key),
                     };
                     let value_type = synth(env, &kv.value);
                     Some(Property {
@@ -54,7 +54,7 @@ fn synth_object(env: &Env, obj: &ObjectLit) -> Type {
                         _type: value_type,
                     })
                 } else {
-                    unimplemented!("未対応のプロパティ: {:?}", boxed_prop)
+                    unimplemented!("Unexpected prop type: {:?}", prop);
                 }
             } else {
                 None
@@ -81,7 +81,8 @@ fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
                 name: name.clone(),
                 _type: _type.clone(),
             });
-            new_env = new_env.set(&name, _type);
+
+            new_env.set(&name, _type);
         } else {
             unimplemented!("Unexpected params type: {:?}", param);
         }
@@ -94,7 +95,7 @@ fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
                 if let Stmt::Expr(expr_stmt) = stmt {
                     synth(&new_env, &expr_stmt.expr)
                 } else {
-                    unimplemented!("未対応のステートメント: {:?}", stmt)
+                    unimplemented!("Unexpected statement type: {:?}", stmt);
                 }
             } else {
                 Type::Null
@@ -111,8 +112,45 @@ fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
 }
 
 fn synth_call(env: &Env, call: &CallExpr) -> Type {
-    // 簡略化のため、常にNumber型を返す
-    Type::Number
+    let callee = match call.callee.clone() {
+        Callee::Expr(expr) => synth(env, &*expr),
+        _ => panic!("Unexpected callee type: {:?}", call.callee),
+    };
+
+    let args = call
+        .args
+        .iter()
+        .map(|arg| synth(env, &arg.expr))
+        .collect::<Vec<Type>>();
+
+    match callee {
+        Type::Function {
+            args: expected_args,
+            ret,
+        } => {
+            if args.len() != expected_args.len() {
+                panic!(
+                    "Number of arguments does not match: expected {} but got {}",
+                    expected_args.len(),
+                    args.len()
+                );
+            }
+
+            for (i, (expected, actual)) in expected_args.iter().zip(args.iter()).enumerate() {
+                if expected != actual {
+                    panic!(
+                        "Type mismatch at argument {}: expected {} but got {}",
+                        i + 1,
+                        expected.to_string(),
+                        actual.to_string()
+                    )
+                }
+            }
+
+            *ret
+        }
+        _ => panic!("Expected function type but got {:?}", callee),
+    }
 }
 
 #[cfg(test)]
@@ -185,8 +223,7 @@ mod tests {
 
     #[test]
     fn should_synth_object() {
-        let mut env = Env::new();
-        env.set("x", Type::Number);
+        let env = Env::new().set("x", Type::Number);
 
         let expr = parse_expression("{ n: 9, b: x }");
         let _type = synth(&env, &expr);
@@ -207,8 +244,7 @@ mod tests {
 
     #[test]
     fn should_synth_function() {
-        let mut env = Env::new();
-        env.set("x", Type::Number);
+        let env = Env::new().set("x", Type::Number);
         let expr = parse_expression("(x: number, y: string) => ({ x: x, y: y })");
         let _type = synth(&env, &expr);
         assert_eq!(
@@ -231,8 +267,13 @@ mod tests {
 
     #[test]
     fn should_synth_call() {
-        let mut env = Env::new();
-        env.set("x", Type::Number);
+        let env = Env::new().set(
+            "f",
+            Type::Function {
+                args: vec![Type::Number, Type::Number],
+                ret: Box::new(Type::Number),
+            },
+        );
 
         let expr = parse_expression("f(7, 9)");
         let _type = synth(&env, &expr);
