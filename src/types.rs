@@ -1,6 +1,4 @@
-use swc_ecma_ast::{
-    ArrowExpr, Lit, ObjectLit, TsKeywordType, TsKeywordTypeKind, TsType, TsTypeAnn,
-};
+use swc_ecma_ast::{TsKeywordType, TsKeywordTypeKind, TsType, TsTypeAnn};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Type {
@@ -78,66 +76,6 @@ fn of_ts_type_keyword(ts_keyword: TsKeywordType) -> Type {
         TsKeywordTypeKind::TsNumberKeyword => Type::Number,
         TsKeywordTypeKind::TsStringKeyword => Type::String,
         _ => unimplemented!("未対応のキーワード型: {:?}", ts_keyword),
-    }
-}
-
-enum PropertyType {
-    Single(Property),
-    Multiple(Vec<Property>),
-}
-
-fn object(property: PropertyType) -> Type {
-    match property {
-        PropertyType::Single(property) => Type::Object(vec![property]),
-        PropertyType::Multiple(properties) => Type::Object(properties),
-    }
-}
-
-fn of_ts_type_literal(lit: &Lit) -> Type {
-    match lit {
-        Lit::Null(_) => Type::Null,
-        Lit::Bool(_) => Type::Boolean,
-        Lit::Num(_) => Type::Number,
-        Lit::Str(_) => Type::String,
-        _ => unimplemented!("未対応のリテラルです: {:?}", lit),
-    }
-}
-
-fn of_ts_type_object(obj: &ObjectLit) -> Type {
-    // let properties = obj
-    //     .props
-    //     .iter()
-    //     .filter_map(|prop| {
-    //         if let PropOrSpread::Prop(boxed_prop) = prop {
-    //             if let Prop::KeyValue(kv) = &**boxed_prop {
-    //                 let key = match &kv.key {
-    //                     PropName::Ident(ident) => ident.sym.to_string(),
-    //                     PropName::Str(str_) => str_.value.to_string(),
-    //                     _ => unimplemented!("未対応のプロパティキーです: {:?}", kv.key),
-    //                 };
-    //                 let value_type = synth_literal_expr(&kv.value);
-    //                 Some(Property {
-    //                     name: key,
-    //                     _type: value_type,
-    //                 })
-    //             } else {
-    //                 unimplemented!("未対応のプロパティです: {:?}", boxed_prop)
-    //             }
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect();
-    // Type::Object(properties)
-    unimplemented!()
-}
-
-fn of_ts_type_function(arrow: &ArrowExpr) -> Type {
-    // 簡略化のため、引数はNumber型、戻り値もNumber型とする
-    // TODO: 引数の方情報を取得する
-    Type::Function {
-        args: vec![Type::Number; arrow.params.len()],
-        ret: Box::new(Type::Number),
     }
 }
 
