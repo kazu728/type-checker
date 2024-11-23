@@ -7,7 +7,31 @@ pub enum Type {
     Number,
     String,
     Object(Vec<Property>),
-    Function { args: Vec<Type>, ret: Box<Type> },
+    Function {
+        args: Vec<Type>,
+        ret: Box<Type>,
+    },
+    Singleton {
+        base: Box<Type>,
+        value: PrimitiveType,
+    },
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum PrimitiveType {
+    Boolean(bool),
+    Number(usize),
+    String(String),
+}
+
+impl PrimitiveType {
+    pub fn to_string(&self) -> String {
+        match self {
+            PrimitiveType::Boolean(value) => value.to_string(),
+            PrimitiveType::Number(value) => value.to_string(),
+            PrimitiveType::String(value) => value.clone(),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -41,6 +65,10 @@ impl Type {
         matches!(self, Type::Function { .. })
     }
 
+    fn is_singleton(&self) -> bool {
+        matches!(self, Type::Singleton { .. })
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Type::Null => "null".to_string(),
@@ -57,6 +85,9 @@ impl Type {
             Type::Function { args, ret } => {
                 let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 format!("({}) => {}", args_str.join(", "), ret.to_string())
+            }
+            Type::Singleton { base, value } => {
+                format!("{}: {}", base.to_string(), value.to_string())
             }
         }
     }
@@ -118,6 +149,13 @@ pub fn is_subtype(a: Type, b: Type) -> bool {
             }
             is_subtype(*a_ret.clone(), *b_ret.clone())
         }
+        (Type::Singleton { base, value }, Type::Number) => {
+            base.is_number() && matches!(value, PrimitiveType::Number(_))
+        }
+        (Type::Singleton { base, value }, Type::String) => {
+            base.is_string() && matches!(value, PrimitiveType::String(_))
+        }
+
         _ => false,
     }
 }

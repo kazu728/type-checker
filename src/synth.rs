@@ -1,5 +1,5 @@
 use crate::env::Env;
-use crate::types::{of_ts_type, Property, Type};
+use crate::types::{is_subtype, of_ts_type, PrimitiveType, Property, Type};
 use swc_ecma_ast::{
     ArrowExpr, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop, PropName,
     PropOrSpread, Stmt,
@@ -29,10 +29,31 @@ fn synth_identifier(env: &Env, ident: &Ident) -> Type {
 fn synth_literal(lit: &Lit) -> Type {
     match lit {
         Lit::Null(_) => Type::Null,
-        Lit::Bool(_) => Type::Boolean,
-        Lit::Num(_) => Type::Number,
-        Lit::Str(_) => Type::String,
+        Lit::Bool(value) => synth_boolean(value),
+        Lit::Num(value) => synth_number(value),
+        Lit::Str(value) => synth_string(value),
         _ => unimplemented!("Unsupported literal: {:?}", lit),
+    }
+}
+
+fn synth_boolean(ast: &swc_ecma_ast::Bool) -> Type {
+    Type::Singleton {
+        base: Box::new(Type::Boolean),
+        value: PrimitiveType::Boolean(ast.value),
+    }
+}
+
+fn synth_number(ast: &swc_ecma_ast::Number) -> Type {
+    Type::Singleton {
+        base: Box::new(Type::Number),
+        value: PrimitiveType::Number(ast.value as usize),
+    }
+}
+
+fn synth_string(ast: &swc_ecma_ast::Str) -> Type {
+    Type::Singleton {
+        base: Box::new(Type::String),
+        value: PrimitiveType::String(ast.value.to_string()),
     }
 }
 
@@ -137,7 +158,7 @@ fn synth_call(env: &Env, call: &CallExpr) -> Type {
             }
 
             for (i, (expected, actual)) in expected_args.iter().zip(args.iter()).enumerate() {
-                if expected != actual {
+                if !is_subtype(actual.clone(), expected.clone()) {
                     panic!(
                         "Type mismatch at argument {}: expected {} but got {}",
                         i + 1,
@@ -170,27 +191,51 @@ mod tests {
             span: Default::default(),
             value: true,
         });
-        assert_eq!(synth_literal(&lit_true), Type::Boolean);
+        assert_eq!(
+            synth_literal(&lit_true),
+            Type::Singleton {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(true)
+            }
+        );
 
         let lit_false = Lit::Bool(Bool {
             span: Default::default(),
             value: false,
         });
-        assert_eq!(synth_literal(&lit_false), Type::Boolean);
+        assert_eq!(
+            synth_literal(&lit_false),
+            Type::Singleton {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(false)
+            }
+        );
 
         let lit_number = Lit::Num(Number {
             span: Default::default(),
             value: 7.0,
             raw: None,
         });
-        assert_eq!(synth_literal(&lit_number), Type::Number);
+        assert_eq!(
+            synth_literal(&lit_number),
+            Type::Singleton {
+                base: Box::new(Type::Number),
+                value: PrimitiveType::Number(7)
+            }
+        );
 
         let lit_string = Lit::Str(Str {
             span: Default::default(),
             value: "hello".into(),
             raw: None,
         });
-        assert_eq!(synth_literal(&lit_string), Type::String);
+        assert_eq!(
+            synth_literal(&lit_string),
+            Type::Singleton {
+                base: Box::new(Type::String),
+                value: PrimitiveType::String("hello".to_string())
+            }
+        );
     }
 
     #[test]
@@ -204,15 +249,24 @@ mod tests {
                 Type::Object(vec![
                     Property {
                         name: "n".to_string(),
-                        _type: Type::Number
+                        _type: Type::Singleton {
+                            base: Box::new(Type::Number),
+                            value: PrimitiveType::Number(9)
+                        }
                     },
                     Property {
                         name: "b".to_string(),
-                        _type: Type::Boolean
+                        _type: Type::Singleton {
+                            base: Box::new(Type::Boolean),
+                            value: PrimitiveType::Boolean(true)
+                        }
                     },
                     Property {
                         name: "s".to_string(),
-                        _type: Type::String
+                        _type: Type::Singleton {
+                            base: Box::new(Type::String),
+                            value: PrimitiveType::String("hello".to_string())
+                        }
                     }
                 ])
             );
@@ -232,7 +286,10 @@ mod tests {
             Type::Object(vec![
                 Property {
                     name: "n".to_string(),
-                    _type: Type::Number
+                    _type: Type::Singleton {
+                        base: Box::new(Type::Number),
+                        value: PrimitiveType::Number(9)
+                    }
                 },
                 Property {
                     name: "b".to_string(),
