@@ -6,15 +6,9 @@ pub enum Type {
     Boolean,
     Number,
     String,
-    Object(Vec<Property>),
-    Function {
-        args: Vec<Type>,
-        ret: Box<Type>,
-    },
-    Singleton {
-        base: Box<Type>,
-        value: PrimitiveType,
-    },
+    Object(Vec<ObjectProperty>),
+    Function(FunctionProperty),
+    Singleton(SingletonProperty),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -35,9 +29,21 @@ impl PrimitiveType {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct Property {
+pub struct ObjectProperty {
     pub name: String,
     pub _type: Type,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct FunctionProperty {
+    pub args: Vec<Type>,
+    pub ret: Box<Type>,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct SingletonProperty {
+    pub base: Box<Type>,
+    pub value: PrimitiveType,
 }
 
 impl Type {
@@ -82,11 +88,11 @@ impl Type {
                     .collect();
                 format!("{{ {} }}", props.join(", "))
             }
-            Type::Function { args, ret } => {
+            Type::Function(FunctionProperty { args, ret }) => {
                 let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
                 format!("({}) => {}", args_str.join(", "), ret.to_string())
             }
-            Type::Singleton { base, value } => {
+            Type::Singleton(SingletonProperty { base, value }) => {
                 format!("{}: {}", base.to_string(), value.to_string())
             }
         }
@@ -96,7 +102,7 @@ impl Type {
 pub fn of_ts_type(ts_type: TsTypeAnn) -> Type {
     match *ts_type.type_ann {
         TsType::TsKeywordType(ts_keyword_type) => of_ts_type_keyword(ts_keyword_type),
-        _ => unimplemented!("未対応の型: {:?}", ts_type.type_ann),
+        _ => unimplemented!("Unsupported type: {:?}", ts_type.type_ann),
     }
 }
 
@@ -106,57 +112,70 @@ fn of_ts_type_keyword(ts_keyword: TsKeywordType) -> Type {
         TsKeywordTypeKind::TsBooleanKeyword => Type::Boolean,
         TsKeywordTypeKind::TsNumberKeyword => Type::Number,
         TsKeywordTypeKind::TsStringKeyword => Type::String,
-        _ => unimplemented!("未対応のキーワード型: {:?}", ts_keyword),
+        _ => unimplemented!("Unsupported keyword type: {:?}", ts_keyword.kind),
     }
 }
 
-pub fn is_subtype(a: Type, b: Type) -> bool {
+pub fn is_subtype(a: &Type, b: &Type) -> bool {
     match (a, b) {
         (Type::Null, Type::Null) => true,
         (Type::Boolean, Type::Boolean) => true,
         (Type::Number, Type::Number) => true,
         (Type::String, Type::String) => true,
-        (Type::Object(a_props), Type::Object(b_props)) => {
-            for b_prop in b_props {
-                let a_prop = a_props.iter().find(|p| p.name == b_prop.name);
-                if let Some(a_prop) = a_prop {
-                    if !is_subtype(a_prop._type.clone(), b_prop._type.clone()) {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            }
-            true
-        }
-        (
-            Type::Function {
-                args: a_args,
-                ret: a_ret,
-            },
-            Type::Function {
-                args: b_args,
-                ret: b_ret,
-            },
-        ) => {
-            if a_args.len() != b_args.len() {
-                return false;
-            }
-            for (a_arg, b_arg) in a_args.iter().zip(b_args.iter()) {
-                if !is_subtype(a_arg.clone(), b_arg.clone()) {
-                    return false;
-                }
-            }
-            is_subtype(*a_ret.clone(), *b_ret.clone())
-        }
-        (Type::Singleton { base, value }, Type::Number) => {
+        (a @ Type::Object(_), b @ Type::Object(_)) => is_subtype_object(a, b),
+        (a @ Type::Function { .. }, b @ Type::Function { .. }) => is_subtype_function(a, b),
+        (Type::Singleton(SingletonProperty { base, value }), Type::Number) => {
             base.is_number() && matches!(value, PrimitiveType::Number(_))
         }
-        (Type::Singleton { base, value }, Type::String) => {
+        (Type::Singleton(SingletonProperty { base, value }), Type::String) => {
             base.is_string() && matches!(value, PrimitiveType::String(_))
         }
 
         _ => false,
+    }
+}
+
+fn is_subtype_object(a: &Type, b: &Type) -> bool {
+    if let (Type::Object(a_props), Type::Object(b_props)) = (a, b) {
+        for b_prop in b_props {
+            let a_prop = a_props.iter().find(|p| p.name == b_prop.name);
+            if let Some(a_prop) = a_prop {
+                if !is_subtype(&a_prop._type, &b_prop._type) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    } else {
+        false
+    }
+}
+
+fn is_subtype_function(a: &Type, b: &Type) -> bool {
+    if let (
+        Type::Function(FunctionProperty {
+            args: a_args,
+            ret: a_ret,
+        }),
+        Type::Function(FunctionProperty {
+            args: b_args,
+            ret: b_ret,
+        }),
+    ) = (a, b)
+    {
+        if a_args.len() != b_args.len() {
+            return false;
+        }
+        for (a_arg, b_arg) in a_args.iter().zip(b_args.iter()) {
+            if !is_subtype(a_arg, b_arg) {
+                return false;
+            }
+        }
+        is_subtype(a_ret, b_ret)
+    } else {
+        false
     }
 }
 
@@ -166,17 +185,17 @@ mod tests {
 
     #[test]
     fn should_handle_subtype() {
-        assert!(is_subtype(Type::Null, Type::Null));
-        assert!(is_subtype(Type::Boolean, Type::Boolean));
-        assert!(is_subtype(Type::Number, Type::Number));
-        assert!(is_subtype(Type::String, Type::String));
+        assert!(is_subtype(&Type::Null, &Type::Null));
+        assert!(is_subtype(&Type::Boolean, &Type::Boolean));
+        assert!(is_subtype(&Type::Number, &Type::Number));
+        assert!(is_subtype(&Type::String, &Type::String));
 
         assert!(is_subtype(
-            Type::Object(vec![Property {
+            &Type::Object(vec![ObjectProperty {
                 name: "n".to_string(),
                 _type: Type::Number
             }]),
-            Type::Object(vec![Property {
+            &Type::Object(vec![ObjectProperty {
                 name: "n".to_string(),
                 _type: Type::Number
             }])
@@ -184,11 +203,11 @@ mod tests {
 
         assert_eq!(
             is_subtype(
-                Type::Object(vec![Property {
+                &Type::Object(vec![ObjectProperty {
                     name: "n".to_string(),
                     _type: Type::Number
                 }]),
-                Type::Object(vec![Property {
+                &Type::Object(vec![ObjectProperty {
                     name: "n".to_string(),
                     _type: Type::String
                 }])
@@ -198,16 +217,16 @@ mod tests {
 
         assert_eq!(
             is_subtype(
-                Type::Object(vec![Property {
+                &Type::Object(vec![ObjectProperty {
                     name: "n".to_string(),
                     _type: Type::Number
                 }]),
-                Type::Object(vec![
-                    Property {
+                &Type::Object(vec![
+                    ObjectProperty {
                         name: "n".to_string(),
                         _type: Type::Number
                     },
-                    Property {
+                    ObjectProperty {
                         name: "b".to_string(),
                         _type: Type::Boolean
                     }

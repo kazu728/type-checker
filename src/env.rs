@@ -31,22 +31,19 @@ impl Env {
 
 #[test]
 fn should_get_env() {
-    let mut env = Env::new();
-    env.set("x", Type::Number);
+    let env = Env::new().set("x", Type::Number);
     assert_eq!(env.get("x"), Some(&Type::Number));
 }
 
 #[test]
 fn should_set_env() {
-    let mut env = Env::new();
-    let env = env.set("y", Type::Boolean);
+    let env = Env::new().set("y", Type::Boolean);
     assert_eq!(env.get("y"), Some(&Type::Boolean));
 }
 
 #[test]
 fn should_get_entries() {
-    let env = &mut Env::new();
-    let env = &mut env.set("y", Type::Boolean).set("x", Type::Number);
+    let env = &mut Env::new().set("y", Type::Boolean).set("x", Type::Number);
 
     let mut entries = env.entries();
     entries.sort_by(|a, b| a.0.cmp(&b.0));

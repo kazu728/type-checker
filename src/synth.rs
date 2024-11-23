@@ -1,5 +1,8 @@
 use crate::env::Env;
-use crate::types::{is_subtype, of_ts_type, PrimitiveType, Property, Type};
+use crate::types::{
+    is_subtype, of_ts_type, FunctionProperty, ObjectProperty, PrimitiveType, SingletonProperty,
+    Type,
+};
 use swc_ecma_ast::{
     ArrowExpr, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop, PropName,
     PropOrSpread, Stmt,
@@ -37,24 +40,24 @@ fn synth_literal(lit: &Lit) -> Type {
 }
 
 fn synth_boolean(ast: &swc_ecma_ast::Bool) -> Type {
-    Type::Singleton {
+    Type::Singleton(SingletonProperty {
         base: Box::new(Type::Boolean),
         value: PrimitiveType::Boolean(ast.value),
-    }
+    })
 }
 
 fn synth_number(ast: &swc_ecma_ast::Number) -> Type {
-    Type::Singleton {
+    Type::Singleton(SingletonProperty {
         base: Box::new(Type::Number),
         value: PrimitiveType::Number(ast.value as usize),
-    }
+    })
 }
 
 fn synth_string(ast: &swc_ecma_ast::Str) -> Type {
-    Type::Singleton {
+    Type::Singleton(SingletonProperty {
         base: Box::new(Type::String),
         value: PrimitiveType::String(ast.value.to_string()),
-    }
+    })
 }
 
 fn synth_object(env: &Env, obj: &ObjectLit) -> Type {
@@ -70,7 +73,7 @@ fn synth_object(env: &Env, obj: &ObjectLit) -> Type {
                         _ => unimplemented!("Unexpected key type: {:?}", kv.key),
                     };
                     let value_type = synth(env, &kv.value);
-                    Some(Property {
+                    Some(ObjectProperty {
                         name: key,
                         _type: value_type,
                     })
@@ -98,7 +101,7 @@ fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
                 None => Type::Null,
             };
 
-            bindings.push(Property {
+            bindings.push(ObjectProperty {
                 name: name.clone(),
                 _type: _type.clone(),
             });
@@ -124,16 +127,14 @@ fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
         }
     };
 
-    let args = bindings.iter().map(|p| p._type.clone()).collect();
-
-    Type::Function {
-        args,
+    Type::Function(FunctionProperty {
+        args: bindings.into_iter().map(|p| p._type).collect(),
         ret: Box::new(ret),
-    }
+    })
 }
 
 fn synth_call(env: &Env, call: &CallExpr) -> Type {
-    let callee = match call.callee.clone() {
+    let callee = match &call.callee {
         Callee::Expr(expr) => synth(env, &*expr),
         _ => panic!("Unexpected callee type: {:?}", call.callee),
     };
@@ -145,10 +146,10 @@ fn synth_call(env: &Env, call: &CallExpr) -> Type {
         .collect::<Vec<Type>>();
 
     match callee {
-        Type::Function {
+        Type::Function(FunctionProperty {
             args: expected_args,
             ret,
-        } => {
+        }) => {
             if args.len() != expected_args.len() {
                 panic!(
                     "Number of arguments does not match: expected {} but got {}",
@@ -158,7 +159,7 @@ fn synth_call(env: &Env, call: &CallExpr) -> Type {
             }
 
             for (i, (expected, actual)) in expected_args.iter().zip(args.iter()).enumerate() {
-                if !is_subtype(actual.clone(), expected.clone()) {
+                if !is_subtype(actual, expected) {
                     panic!(
                         "Type mismatch at argument {}: expected {} but got {}",
                         i + 1,
@@ -193,10 +194,10 @@ mod tests {
         });
         assert_eq!(
             synth_literal(&lit_true),
-            Type::Singleton {
+            Type::Singleton(SingletonProperty {
                 base: Box::new(Type::Boolean),
                 value: PrimitiveType::Boolean(true)
-            }
+            })
         );
 
         let lit_false = Lit::Bool(Bool {
@@ -205,10 +206,10 @@ mod tests {
         });
         assert_eq!(
             synth_literal(&lit_false),
-            Type::Singleton {
+            Type::Singleton(SingletonProperty {
                 base: Box::new(Type::Boolean),
                 value: PrimitiveType::Boolean(false)
-            }
+            })
         );
 
         let lit_number = Lit::Num(Number {
@@ -218,10 +219,10 @@ mod tests {
         });
         assert_eq!(
             synth_literal(&lit_number),
-            Type::Singleton {
+            Type::Singleton(SingletonProperty {
                 base: Box::new(Type::Number),
                 value: PrimitiveType::Number(7)
-            }
+            })
         );
 
         let lit_string = Lit::Str(Str {
@@ -231,10 +232,10 @@ mod tests {
         });
         assert_eq!(
             synth_literal(&lit_string),
-            Type::Singleton {
+            Type::Singleton(SingletonProperty {
                 base: Box::new(Type::String),
                 value: PrimitiveType::String("hello".to_string())
-            }
+            })
         );
     }
 
@@ -247,26 +248,26 @@ mod tests {
             assert_eq!(
                 obj_type,
                 Type::Object(vec![
-                    Property {
+                    ObjectProperty {
                         name: "n".to_string(),
-                        _type: Type::Singleton {
+                        _type: Type::Singleton(SingletonProperty {
                             base: Box::new(Type::Number),
                             value: PrimitiveType::Number(9)
-                        }
+                        })
                     },
-                    Property {
+                    ObjectProperty {
                         name: "b".to_string(),
-                        _type: Type::Singleton {
+                        _type: Type::Singleton(SingletonProperty {
                             base: Box::new(Type::Boolean),
                             value: PrimitiveType::Boolean(true)
-                        }
+                        })
                     },
-                    Property {
+                    ObjectProperty {
                         name: "s".to_string(),
-                        _type: Type::Singleton {
+                        _type: Type::Singleton(SingletonProperty {
                             base: Box::new(Type::String),
                             value: PrimitiveType::String("hello".to_string())
-                        }
+                        })
                     }
                 ])
             );
@@ -284,14 +285,14 @@ mod tests {
         assert_eq!(
             _type,
             Type::Object(vec![
-                Property {
+                ObjectProperty {
                     name: "n".to_string(),
-                    _type: Type::Singleton {
+                    _type: Type::Singleton(SingletonProperty {
                         base: Box::new(Type::Number),
                         value: PrimitiveType::Number(9)
-                    }
+                    })
                 },
-                Property {
+                ObjectProperty {
                     name: "b".to_string(),
                     _type: Type::Number
                 },
@@ -306,19 +307,19 @@ mod tests {
         let _type = synth(&env, &expr);
         assert_eq!(
             _type,
-            Type::Function {
+            Type::Function(FunctionProperty {
                 args: vec![Type::Number, Type::String],
                 ret: Box::new(Type::Object(vec![
-                    Property {
+                    ObjectProperty {
                         name: "x".to_string(),
                         _type: Type::Number
                     },
-                    Property {
+                    ObjectProperty {
                         name: "y".to_string(),
                         _type: Type::String
                     },
                 ]))
-            }
+            })
         );
     }
 
@@ -326,10 +327,10 @@ mod tests {
     fn should_synth_call() {
         let env = Env::new().set(
             "f",
-            Type::Function {
+            Type::Function(FunctionProperty {
                 args: vec![Type::Number, Type::Number],
                 ret: Box::new(Type::Number),
-            },
+            }),
         );
 
         let expr = parse_expression("f(7, 9)");
