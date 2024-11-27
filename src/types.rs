@@ -71,7 +71,7 @@ impl Type {
         matches!(self, Type::Function { .. })
     }
 
-    fn is_singleton(&self) -> bool {
+    pub fn is_singleton(&self) -> bool {
         matches!(self, Type::Singleton { .. })
     }
 

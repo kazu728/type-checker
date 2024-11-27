@@ -4,8 +4,8 @@ use crate::types::{
     Type,
 };
 use swc_ecma_ast::{
-    ArrowExpr, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop, PropName,
-    PropOrSpread, Stmt,
+    ArrowExpr, BinaryOp, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop,
+    PropName, PropOrSpread, Stmt,
 };
 
 pub fn synth(env: &Env, expr: &Expr) -> Type {
@@ -16,6 +16,7 @@ pub fn synth(env: &Env, expr: &Expr) -> Type {
         Expr::Arrow(arrow) => synth_function(env, arrow),
         Expr::Call(call) => synth_call(&env, call),
         Expr::Paren(paren) => synth(env, &paren.expr),
+        Expr::Bin(bin) => synth_bin(env, bin),
         _ => unimplemented!("Unsupported expression: {:?}", expr),
     }
 }
@@ -172,6 +173,49 @@ fn synth_call(env: &Env, call: &CallExpr) -> Type {
             *ret
         }
         _ => panic!("Expected function type but got {:?}", callee),
+    }
+}
+
+fn synth_bin(env: &Env, bin: &swc_ecma_ast::BinExpr) -> Type {
+    let left = synth(env, &bin.left);
+    let right = synth(env, &bin.right);
+
+    match bin.op {
+        BinaryOp::EqEqEq => match (left, right) {
+            (Type::Singleton(left), Type::Singleton(right)) => Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(left.value == right.value),
+            }),
+            _ => Type::Boolean,
+        },
+        BinaryOp::NotEqEq => match (left, right) {
+            (Type::Singleton(left), Type::Singleton(right)) => Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(left.value != right.value),
+            }),
+            _ => Type::Boolean,
+        },
+        BinaryOp::Add => {
+            if is_subtype(&left, &Type::Number) && is_subtype(&right, &Type::Number) {
+                match (&left, &right) {
+                    (Type::Singleton(left), Type::Singleton(right)) => {
+                        Type::Singleton(SingletonProperty {
+                            base: Box::new(Type::Number),
+                            value: PrimitiveType::Number(match (&left.value, &right.value) {
+                                (PrimitiveType::Number(left), PrimitiveType::Number(right)) => {
+                                    left + right
+                                }
+                                _ => unreachable!(),
+                            }),
+                        })
+                    }
+                    _ => Type::Number,
+                }
+            } else {
+                unimplemented!("Unsupported binary operator: {:?}", bin.op);
+            }
+        }
+        _ => unimplemented!("Unsupported binary operator: {:?}", bin.op),
     }
 }
 
@@ -336,5 +380,52 @@ mod tests {
         let expr = parse_expression("f(7, 9)");
         let _type = synth(&env, &expr);
         assert_eq!(_type, Type::Number);
+    }
+
+    #[test]
+    fn should_synth_bin_add() {
+        let env = Env::new().set("x", Type::Number);
+
+        let expr = parse_expression("x + 7");
+        let _type = synth(&env, &expr);
+        assert_eq!(_type, Type::Number);
+    }
+
+    #[test]
+    fn should_synth_bin_eqeqeq() {
+        let env = Env::new().set("x", Type::Number);
+
+        let expr = parse_expression("x === 7");
+        let _type = synth(&env, &expr);
+        assert_eq!(_type, Type::Boolean);
+
+        let expr = parse_expression("'hello' === 'hello'");
+        let _type = synth(&env, &expr);
+        assert_eq!(
+            _type,
+            Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(true)
+            })
+        );
+    }
+
+    #[test]
+    fn should_synth_bin_noteqeq() {
+        let env = Env::new().set("x", Type::Number);
+
+        let expr = parse_expression("x !== 7");
+        let _type = synth(&env, &expr);
+        assert_eq!(_type, Type::Boolean);
+
+        let expr = parse_expression("'hello' !== 'hello'");
+        let _type = synth(&env, &expr);
+        assert_eq!(
+            _type,
+            Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(false)
+            })
+        );
     }
 }
