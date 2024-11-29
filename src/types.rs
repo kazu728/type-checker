@@ -97,6 +97,26 @@ impl Type {
             }
         }
     }
+
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Type::Null => false,
+            Type::Boolean => true,
+            Type::Number => true,
+            Type::String => true,
+            Type::Object(_) => true,
+            Type::Function(_) => true,
+            Type::Singleton(a) => match &a.value {
+                PrimitiveType::Boolean(value) => value.clone(),
+                PrimitiveType::Number(value) => *value != 0,
+                PrimitiveType::String(value) => !value.is_empty(),
+            },
+        }
+    }
+
+    pub fn is_falsy(&self) -> bool {
+        !self.is_truthy()
+    }
 }
 
 pub fn of_ts_type(ts_type: TsTypeAnn) -> Type {

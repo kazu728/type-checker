@@ -215,6 +215,21 @@ fn synth_bin(env: &Env, bin: &swc_ecma_ast::BinExpr) -> Type {
                 unimplemented!("Unsupported binary operator: {:?}", bin.op);
             }
         }
+        BinaryOp::LogicalAnd => {
+            if left.is_falsy() {
+                left
+            } else {
+                right
+            }
+        }
+        BinaryOp::LogicalOr => {
+            if left.is_truthy() {
+                left
+            } else {
+                right
+            }
+        }
+
         _ => unimplemented!("Unsupported binary operator: {:?}", bin.op),
     }
 }
@@ -427,5 +442,43 @@ mod tests {
                 value: PrimitiveType::Boolean(false)
             })
         );
+    }
+
+    #[test]
+    fn should_synth_bin_logical_and() {
+        let env = Env::new().set("x", Type::String);
+
+        let expr = parse_expression("x && true");
+        let _type = synth(&env, &expr);
+        assert_eq!(
+            _type,
+            Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(true)
+            })
+        );
+
+        let expr = parse_expression("'hello' && x");
+        let _type = synth(&env, &expr);
+        assert_eq!(_type, Type::String)
+    }
+
+    #[test]
+    fn should_synth_bin_logical_or() {
+        let env = Env::new().set("x", Type::Boolean);
+
+        let expr = parse_expression("x || false");
+        let _type = synth(&env, &expr);
+        assert_eq!(_type, Type::Boolean);
+
+        let expr = parse_expression("true || x");
+        let _type = synth(&env, &expr);
+        assert_eq!(
+            _type,
+            Type::Singleton(SingletonProperty {
+                base: Box::new(Type::Boolean),
+                value: PrimitiveType::Boolean(true)
+            })
+        )
     }
 }
