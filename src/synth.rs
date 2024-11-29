@@ -5,7 +5,7 @@ use crate::types::{
 };
 use swc_ecma_ast::{
     ArrowExpr, BinaryOp, BlockStmtOrExpr, CallExpr, Callee, Expr, Ident, Lit, ObjectLit, Pat, Prop,
-    PropName, PropOrSpread, Stmt,
+    PropName, PropOrSpread, Stmt, UnaryOp,
 };
 
 pub fn synth(env: &Env, expr: &Expr) -> Type {
@@ -17,6 +17,7 @@ pub fn synth(env: &Env, expr: &Expr) -> Type {
         Expr::Call(call) => synth_call(&env, call),
         Expr::Paren(paren) => synth(env, &paren.expr),
         Expr::Bin(bin) => synth_bin(env, bin),
+        Expr::Unary(expr) => synth(env, &expr.arg),
         _ => unimplemented!("Unsupported expression: {:?}", expr),
     }
 }
@@ -231,6 +232,30 @@ fn synth_bin(env: &Env, bin: &swc_ecma_ast::BinExpr) -> Type {
         }
 
         _ => unimplemented!("Unsupported binary operator: {:?}", bin.op),
+    }
+}
+
+fn synth_unary(env: &Env, unary: &swc_ecma_ast::UnaryExpr) -> Type {
+    let arg = synth(env, &unary.arg);
+
+    match unary.op {
+        UnaryOp::Bang => {
+            if arg.is_truthy() {
+                Type::Singleton(SingletonProperty {
+                    base: Box::new(Type::Boolean),
+                    value: PrimitiveType::Boolean(false),
+                })
+            } else if arg.is_falsy() {
+                Type::Singleton(SingletonProperty {
+                    base: Box::new(Type::Boolean),
+                    value: PrimitiveType::Boolean(true),
+                })
+            } else {
+                Type::Boolean
+            }
+        }
+        // TODO: suppot `typeof operator``
+        _ => unimplemented!("Unsupported unary operator: {:?}", unary.op),
     }
 }
 
