@@ -9,6 +9,8 @@ pub enum Type {
     Object(Vec<ObjectProperty>),
     Function(FunctionProperty),
     Singleton(SingletonProperty),
+    Never,
+    Union(Vec<Type>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -75,6 +77,14 @@ impl Type {
         matches!(self, Type::Singleton { .. })
     }
 
+    fn is_never(&self) -> bool {
+        matches!(self, Type::Never)
+    }
+
+    fn is_union(&self) -> bool {
+        matches!(self, Type::Union(_))
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Type::Null => "null".to_string(),
@@ -95,6 +105,11 @@ impl Type {
             Type::Singleton(SingletonProperty { base, value }) => {
                 format!("{}: {}", base.to_string(), value.to_string())
             }
+            Type::Never => "never".to_string(),
+            Type::Union(types) => {
+                let types_str: Vec<String> = types.iter().map(|t| t.to_string()).collect();
+                types_str.join(" | ")
+            }
         }
     }
 
@@ -111,6 +126,8 @@ impl Type {
                 PrimitiveType::Number(value) => *value != 0,
                 PrimitiveType::String(value) => !value.is_empty(),
             },
+            Type::Never => false,
+            Type::Union(types) => types.iter().any(|t| t.is_truthy()),
         }
     }
 
