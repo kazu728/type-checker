@@ -13,6 +13,7 @@ pub fn synth(env: &Env, expr: &Expr) -> Type {
         Expr::Ident(ident) => synth_identifier(env, ident),
         Expr::Lit(lit) => synth_literal(lit),
         Expr::Object(obj) => synth_object(env, obj),
+        Expr::Member(expr) => synth_member(env, &expr),
         Expr::Arrow(arrow) => synth_function(env, arrow),
         Expr::Call(call) => synth_call(&env, call),
         Expr::Paren(paren) => synth(env, &paren.expr),
@@ -88,6 +89,31 @@ fn synth_object(env: &Env, obj: &ObjectLit) -> Type {
         })
         .collect();
     Type::Object(properties)
+}
+
+fn synth_member(env: &Env, ast: &swc_ecma_ast::MemberExpr) -> Type {
+    match &ast.prop {
+        swc_ecma_ast::MemberProp::Ident(ident) => {
+            let object = synth(env, &ast.obj);
+
+            Type::map(object, &|object| {
+                synth_member_object(object, ident.sym.to_string())
+            })
+        }
+        _ => unimplemented!("Unexpected member type: {:?}", &ast.prop),
+    }
+}
+
+fn synth_member_object(object: Type, name: String) -> Type {
+    if let Type::Object(properties) = object {
+        properties
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p._type.clone())
+            .unwrap()
+    } else {
+        unimplemented!("Expected object type but got {:?}", object)
+    }
 }
 
 fn synth_function(env: &Env, arrow: &ArrowExpr) -> Type {
@@ -505,5 +531,63 @@ mod tests {
                 value: PrimitiveType::Boolean(true)
             })
         )
+    }
+
+    #[test]
+    fn should_synth_member() {
+        let env = Env::new().set(
+            "x",
+            Type::Object(vec![
+                ObjectProperty {
+                    name: "n".to_string(),
+                    _type: Type::Number,
+                },
+                ObjectProperty {
+                    name: "b".to_string(),
+                    _type: Type::Boolean,
+                },
+                ObjectProperty {
+                    name: "s".to_string(),
+                    _type: Type::String,
+                },
+            ]),
+        );
+
+        let cases = vec![
+            ("x.n", Type::Number),
+            ("x.b", Type::Boolean),
+            ("x.s", Type::String),
+        ];
+
+        for (input, expected) in cases {
+            let expr = parse_expression(input);
+            let _type = synth(&env, &expr);
+            assert_eq!(_type, expected);
+        }
+    }
+
+    #[test]
+    fn should_handle_union_type() {
+        let env = Env::new().set(
+            "x",
+            Type::Union(vec![
+                Type::Object(vec![ObjectProperty {
+                    name: "b".to_string(),
+                    _type: Type::Boolean,
+                }]),
+                Type::Object(vec![ObjectProperty {
+                    name: "b".to_string(),
+                    _type: Type::String,
+                }]),
+            ]),
+        );
+
+        let cases = vec![("x.b", Type::Union(vec![Type::Boolean, Type::String]))];
+
+        for (input, expected) in cases {
+            let expr = parse_expression(input);
+            let _type = synth(&env, &expr);
+            assert_eq!(_type, expected);
+        }
     }
 }

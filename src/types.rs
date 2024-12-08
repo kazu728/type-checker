@@ -134,6 +134,20 @@ impl Type {
     pub fn is_falsy(&self) -> bool {
         !self.is_truthy()
     }
+
+    pub fn map<F: Fn(Type) -> Type>(t: Type, fun: &F) -> Type {
+        match t {
+            Type::Union(types) => {
+                let mapped_types = types
+                    .iter()
+                    .map(|u| Type::map(u.clone(), fun))
+                    .collect::<Vec<Type>>();
+
+                Type::Union(mapped_types)
+            }
+            _ => fun(t.clone()),
+        }
+    }
 }
 
 pub fn of_ts_type(ts_type: TsTypeAnn) -> Type {
