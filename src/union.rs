@@ -16,10 +16,10 @@ pub fn collapse_subtypes(types: Vec<Type>) -> Vec<Type> {
 
 pub fn flatten(types: Vec<Type>) -> Vec<Type> {
     types
-        .iter()
+        .into_iter()
         .flat_map(|t| match t {
-            Type::Union(ts) => ts.clone(),
-            _ => vec![t.clone()],
+            Type::Union(ts) => ts,
+            _ => vec![t],
         })
         .collect()
 }
@@ -52,9 +52,9 @@ mod tests {
             (vec![Type::String, Type::String], vec![Type::String]),
             (
                 vec![
-                    Type::Singleton(SingletonProperty {
+                    Type::Singleton(SingletonProp {
                         base: Box::new(Type::String),
-                        value: PrimitiveType::String("foo".to_string()),
+                        value: Primitive::String("foo".to_string()),
                     }),
                     Type::String,
                 ],
@@ -98,9 +98,9 @@ mod tests {
             ),
             (
                 vec![
-                    Type::Singleton(SingletonProperty {
+                    Type::Singleton(SingletonProp {
                         base: Box::new(Type::String),
-                        value: PrimitiveType::String("foo".to_string()),
+                        value: Primitive::String("foo".to_string()),
                     }),
                     Type::String,
                 ],

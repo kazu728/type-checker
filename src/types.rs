@@ -6,83 +6,110 @@ pub enum Type {
     Boolean,
     Number,
     String,
-    Object(Vec<ObjectProperty>),
-    Function(FunctionProperty),
-    Singleton(SingletonProperty),
+    Object(Vec<ObjectProp>),
+    Function(FunctionProp),
+    Singleton(SingletonProp),
     Never,
     Union(Vec<Type>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub enum PrimitiveType {
+pub enum Primitive {
     Boolean(bool),
     Number(usize),
     String(String),
 }
 
-impl PrimitiveType {
+impl Primitive {
     pub fn to_string(&self) -> String {
         match self {
-            PrimitiveType::Boolean(value) => value.to_string(),
-            PrimitiveType::Number(value) => value.to_string(),
-            PrimitiveType::String(value) => value.clone(),
+            Primitive::Boolean(value) => value.to_string(),
+            Primitive::Number(value) => value.to_string(),
+            Primitive::String(value) => value.clone(),
         }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct ObjectProperty {
+pub struct ObjectProp {
     pub name: String,
     pub _type: Type,
 }
 
+impl ObjectProp {
+    pub fn new(name: &str, _type: Type) -> ObjectProp {
+        ObjectProp {
+            name: name.to_string(),
+            _type,
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct FunctionProperty {
+pub struct FunctionProp {
     pub args: Vec<Type>,
     pub ret: Box<Type>,
 }
 
+impl FunctionProp {
+    pub fn new(args: Vec<Type>, ret: Type) -> FunctionProp {
+        FunctionProp {
+            args,
+            ret: Box::new(ret),
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct SingletonProperty {
+pub struct SingletonProp {
     pub base: Box<Type>,
-    pub value: PrimitiveType,
+    pub value: Primitive,
+}
+
+impl SingletonProp {
+    pub fn new(base: Type, value: Primitive) -> SingletonProp {
+        SingletonProp {
+            base: Box::new(base),
+            value,
+        }
+    }
 }
 
 impl Type {
-    fn is_null(&self) -> bool {
-        matches!(self, Type::Null)
+    fn is_null(t: &Type) -> bool {
+        matches!(t, Type::Null)
     }
 
-    fn is_boolean(&self) -> bool {
-        matches!(self, Type::Boolean)
+    fn is_boolean(t: &Type) -> bool {
+        matches!(t, Type::Boolean)
     }
 
-    fn is_number(&self) -> bool {
-        matches!(self, Type::Number)
+    fn is_number(t: &Type) -> bool {
+        matches!(t, Type::Number)
     }
 
-    fn is_string(&self) -> bool {
-        matches!(self, Type::String)
+    fn is_string(t: &Type) -> bool {
+        matches!(t, Type::String)
     }
 
-    fn is_object(&self) -> bool {
-        matches!(self, Type::Object(_))
+    fn is_object(t: &Type) -> bool {
+        matches!(t, Type::Object(_))
     }
 
-    fn is_function(&self) -> bool {
-        matches!(self, Type::Function { .. })
+    fn is_function(t: &Type) -> bool {
+        matches!(t, Type::Function { .. })
     }
 
-    pub fn is_singleton(&self) -> bool {
-        matches!(self, Type::Singleton { .. })
+    pub fn is_singleton(t: &Type) -> bool {
+        matches!(t, Type::Singleton { .. })
     }
 
-    fn is_never(&self) -> bool {
-        matches!(self, Type::Never)
+    fn is_never(t: &Type) -> bool {
+        matches!(t, Type::Never)
     }
 
-    fn is_union(&self) -> bool {
-        matches!(self, Type::Union(_))
+    fn is_union(t: &Type) -> bool {
+        matches!(t, Type::Union(_))
     }
 
     pub fn to_string(&self) -> String {
@@ -91,26 +118,34 @@ impl Type {
             Type::Boolean => "boolean".to_string(),
             Type::Number => "number".to_string(),
             Type::String => "string".to_string(),
-            Type::Object(properties) => {
-                let props: Vec<String> = properties
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name, p._type.to_string()))
-                    .collect();
-                format!("{{ {} }}", props.join(", "))
-            }
-            Type::Function(FunctionProperty { args, ret }) => {
-                let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-                format!("({}) => {}", args_str.join(", "), ret.to_string())
-            }
-            Type::Singleton(SingletonProperty { base, value }) => {
-                format!("{}: {}", base.to_string(), value.to_string())
-            }
+            Type::Object(props) => Type::to_string_object(props),
+            Type::Function(props) => Type::to_string_function(props),
+            Type::Singleton(props) => Type::to_string_singleton(props),
             Type::Never => "never".to_string(),
-            Type::Union(types) => {
-                let types_str: Vec<String> = types.iter().map(|t| t.to_string()).collect();
-                types_str.join(" | ")
-            }
+            Type::Union(types) => Type::to_string_union(types),
         }
+    }
+
+    fn to_string_object(props: &Vec<ObjectProp>) -> String {
+        let props_str: Vec<String> = props
+            .iter()
+            .map(|p| format!("{}: {}", p.name, p._type.to_string()))
+            .collect();
+        format!("{{ {} }}", props_str.join(", "))
+    }
+
+    fn to_string_function(props: &FunctionProp) -> String {
+        let args_str: Vec<String> = props.args.iter().map(|a| a.to_string()).collect();
+        format!("({}) => {}", args_str.join(", "), props.ret.to_string())
+    }
+
+    fn to_string_singleton(prop: &SingletonProp) -> String {
+        format!("{}: {}", prop.base.to_string(), prop.value.to_string())
+    }
+
+    fn to_string_union(types: &Vec<Type>) -> String {
+        let types_str: Vec<String> = types.iter().map(|t| t.to_string()).collect();
+        types_str.join(" | ")
     }
 
     pub fn is_truthy(&self) -> bool {
@@ -122,9 +157,9 @@ impl Type {
             Type::Object(_) => true,
             Type::Function(_) => true,
             Type::Singleton(a) => match &a.value {
-                PrimitiveType::Boolean(value) => value.clone(),
-                PrimitiveType::Number(value) => *value != 0,
-                PrimitiveType::String(value) => !value.is_empty(),
+                Primitive::Boolean(value) => value.clone(),
+                Primitive::Number(value) => *value != 0,
+                Primitive::String(value) => !value.is_empty(),
             },
             Type::Never => false,
             Type::Union(types) => types.iter().any(|t| t.is_truthy()),
@@ -139,8 +174,8 @@ impl Type {
         match t {
             Type::Union(types) => {
                 let mapped_types = types
-                    .iter()
-                    .map(|u| Type::map(u.clone(), fun))
+                    .into_iter()
+                    .map(|u| Type::map(u, fun))
                     .collect::<Vec<Type>>();
 
                 Type::Union(mapped_types)
@@ -175,11 +210,11 @@ pub fn is_subtype(a: &Type, b: &Type) -> bool {
         (Type::String, Type::String) => true,
         (a @ Type::Object(_), b @ Type::Object(_)) => is_subtype_object(a, b),
         (a @ Type::Function { .. }, b @ Type::Function { .. }) => is_subtype_function(a, b),
-        (Type::Singleton(SingletonProperty { base, value }), Type::Number) => {
-            base.is_number() && matches!(value, PrimitiveType::Number(_))
+        (Type::Singleton(SingletonProp { base, value }), Type::Number) => {
+            Type::is_number(&base) && matches!(value, Primitive::Number(_))
         }
-        (Type::Singleton(SingletonProperty { base, value }), Type::String) => {
-            base.is_string() && matches!(value, PrimitiveType::String(_))
+        (Type::Singleton(SingletonProp { base, value }), Type::String) => {
+            Type::is_string(&base) && matches!(value, Primitive::String(_))
         }
 
         _ => false,
@@ -206,11 +241,11 @@ fn is_subtype_object(a: &Type, b: &Type) -> bool {
 
 fn is_subtype_function(a: &Type, b: &Type) -> bool {
     if let (
-        Type::Function(FunctionProperty {
+        Type::Function(FunctionProp {
             args: a_args,
             ret: a_ret,
         }),
-        Type::Function(FunctionProperty {
+        Type::Function(FunctionProp {
             args: b_args,
             ret: b_ret,
         }),
@@ -232,58 +267,54 @@ fn is_subtype_function(a: &Type, b: &Type) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
 
     #[test]
     fn should_handle_subtype() {
-        assert!(is_subtype(&Type::Null, &Type::Null));
-        assert!(is_subtype(&Type::Boolean, &Type::Boolean));
-        assert!(is_subtype(&Type::Number, &Type::Number));
-        assert!(is_subtype(&Type::String, &Type::String));
-
-        assert!(is_subtype(
-            &Type::Object(vec![ObjectProperty {
-                name: "n".to_string(),
-                _type: Type::Number
-            }]),
-            &Type::Object(vec![ObjectProperty {
-                name: "n".to_string(),
-                _type: Type::Number
-            }])
-        ));
-
-        assert_eq!(
-            is_subtype(
-                &Type::Object(vec![ObjectProperty {
-                    name: "n".to_string(),
-                    _type: Type::Number
-                }]),
-                &Type::Object(vec![ObjectProperty {
-                    name: "n".to_string(),
-                    _type: Type::String
-                }])
+        let case = vec![
+            (Type::Null, Type::Null, true),
+            (Type::Boolean, Type::Boolean, true),
+            (Type::Number, Type::Number, true),
+            (Type::String, Type::String, true),
+            (
+                Type::Object(vec![ObjectProp::new("n", Type::Number)]),
+                Type::Object(vec![ObjectProp::new("n", Type::Number)]),
+                true,
             ),
-            false
-        );
-
-        assert_eq!(
-            is_subtype(
-                &Type::Object(vec![ObjectProperty {
-                    name: "n".to_string(),
-                    _type: Type::Number
-                }]),
-                &Type::Object(vec![
-                    ObjectProperty {
-                        name: "n".to_string(),
-                        _type: Type::Number
-                    },
-                    ObjectProperty {
-                        name: "b".to_string(),
-                        _type: Type::Boolean
-                    }
+            (
+                Type::Object(vec![ObjectProp::new("n", Type::Number)]),
+                Type::Object(vec![ObjectProp::new("n", Type::String)]),
+                false,
+            ),
+            (
+                Type::Object(vec![ObjectProp::new("n", Type::Number)]),
+                Type::Object(vec![
+                    ObjectProp::new("n", Type::Number),
+                    ObjectProp::new("b", Type::Boolean),
                 ]),
+                false,
             ),
-            false
-        );
+            (
+                Type::Function(FunctionProp::new(vec![Type::Number], Type::Number)),
+                Type::Function(FunctionProp::new(vec![Type::Number], Type::Number)),
+                true,
+            ),
+            (
+                Type::Function(FunctionProp::new(vec![Type::Number], Type::Number)),
+                Type::Function(FunctionProp::new(vec![Type::String], Type::Number)),
+                false,
+            ),
+            (
+                Type::Function(FunctionProp::new(vec![Type::Number], Type::Number)),
+                Type::Function(FunctionProp::new(vec![Type::Number], Type::String)),
+                false,
+            ),
+        ];
+
+        for (a, b, expected) in case {
+            assert_eq!(is_subtype(&a, &b), expected);
+        }
     }
 }
