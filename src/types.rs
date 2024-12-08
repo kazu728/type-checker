@@ -170,7 +170,7 @@ impl Type {
         !self.is_truthy()
     }
 
-    pub fn map<F: Fn(Type) -> Type>(t: Type, fun: &F) -> Type {
+    pub fn map<F: Fn(&Type) -> Type>(t: &Type, fun: &F) -> Type {
         match t {
             Type::Union(types) => {
                 let mapped_types = types
@@ -180,7 +180,31 @@ impl Type {
 
                 Type::Union(mapped_types)
             }
-            _ => fun(t.clone()),
+            _ => fun(t),
+        }
+    }
+
+    pub fn map2<F: Fn(&Type, &Type) -> Type>(t1: &Type, t2: &Type, fun: &F) -> Type {
+        match (t1, t2) {
+            (Type::Union(types1), Type::Union(types2)) => {
+                let mut mapped_types = vec![];
+                for u1 in types1 {
+                    for u2 in types2 {
+                        mapped_types.push(Type::map2(&u1, &u2, fun));
+                    }
+                }
+
+                Type::Union(mapped_types)
+            }
+            (Type::Union(types), t) | (t, Type::Union(types)) => {
+                let mapped_types = types
+                    .into_iter()
+                    .map(|u| Type::map2(&u, &t, fun))
+                    .collect::<Vec<Type>>();
+
+                Type::Union(mapped_types)
+            }
+            _ => fun(t1, t2),
         }
     }
 }

@@ -92,12 +92,12 @@ fn synth_member(env: &Env, ast: &swc_ecma_ast::MemberExpr) -> Type {
         swc_ecma_ast::MemberProp::Ident(ident) => {
             let object = synth(env, &ast.obj);
 
-            Type::map(object, &|object| {
+            Type::map(&object, &|object| {
                 if let Type::Object(properties) = object {
                     properties
                         .into_iter()
                         .find(|p| p.name == ident.sym.to_string())
-                        .map(|p| p._type)
+                        .map(|p| p._type.clone())
                         .unwrap()
                 } else {
                     unimplemented!("Expected object type but got {:?}", object)
@@ -151,40 +151,42 @@ fn synth_call(env: &Env, call: &CallExpr) -> Type {
         _ => panic!("Unexpected callee type: {:?}", call.callee),
     };
 
-    let arg_types: Vec<Type> = call.args.iter().map(|arg| synth(env, &arg.expr)).collect();
+    Type::map(&callee, &|callee| {
+        let arg_types: Vec<Type> = call.args.iter().map(|arg| synth(env, &arg.expr)).collect();
 
-    match callee {
-        Type::Function(FunctionProp { args, ret }) => {
-            if arg_types.len() != args.len() {
-                panic!(
-                    "Number of arguments does not match: expected {} but got {}",
-                    args.len(),
-                    arg_types.len()
-                );
-            }
-
-            for (i, (expected, actual)) in args.iter().zip(arg_types.iter()).enumerate() {
-                if !is_subtype(actual, expected) {
+        match callee {
+            Type::Function(FunctionProp { args, ret }) => {
+                if arg_types.len() != args.len() {
                     panic!(
-                        "Type mismatch at argument {}: expected {} but got {}",
-                        i + 1,
-                        expected.to_string(),
-                        actual.to_string()
-                    )
+                        "Number of arguments does not match: expected {} but got {}",
+                        args.len(),
+                        arg_types.len()
+                    );
                 }
-            }
 
-            *ret
+                for (i, (expected, actual)) in args.iter().zip(arg_types.iter()).enumerate() {
+                    if !is_subtype(actual, expected) {
+                        panic!(
+                            "Type mismatch at argument {}: expected {} but got {}",
+                            i + 1,
+                            expected.to_string(),
+                            actual.to_string()
+                        )
+                    }
+                }
+
+                *ret.clone()
+            }
+            _ => panic!("Expected function type but got {:?}", callee),
         }
-        _ => panic!("Expected function type but got {:?}", callee),
-    }
+    })
 }
 
 fn synth_bin(env: &Env, bin: &swc_ecma_ast::BinExpr) -> Type {
     let left = synth(env, &bin.left);
     let right = synth(env, &bin.right);
 
-    match bin.op {
+    Type::map2(&left, &right, &|left, right| match bin.op {
         BinaryOp::EqEqEq => match (left, right) {
             (Type::Singleton(left), Type::Singleton(right)) => Type::Singleton(SingletonProp {
                 base: Box::new(Type::Boolean),
@@ -219,27 +221,29 @@ fn synth_bin(env: &Env, bin: &swc_ecma_ast::BinExpr) -> Type {
         }
         BinaryOp::LogicalAnd => {
             if left.is_falsy() {
-                left
+                left.clone()
+            } else if left.is_truthy() {
+                right.clone()
             } else {
-                right
+                Type::Union(vec![left.clone(), right.clone()])
             }
         }
         BinaryOp::LogicalOr => {
             if left.is_truthy() {
-                left
+                left.clone()
             } else {
-                right
+                right.clone()
             }
         }
 
         _ => unimplemented!("Unsupported binary operator: {:?}", bin.op),
-    }
+    })
 }
 
 fn synth_unary(env: &Env, unary: &swc_ecma_ast::UnaryExpr) -> Type {
     let arg = synth(env, &unary.arg);
 
-    match unary.op {
+    Type::map(&arg, &|arg| match unary.op {
         UnaryOp::Bang => {
             if arg.is_truthy() {
                 Type::Singleton(SingletonProp {
@@ -257,7 +261,7 @@ fn synth_unary(env: &Env, unary: &swc_ecma_ast::UnaryExpr) -> Type {
         }
         // TODO: suppot `typeof operator``
         _ => unimplemented!("Unsupported unary operator: {:?}", unary.op),
-    }
+    })
 }
 
 #[cfg(test)]
