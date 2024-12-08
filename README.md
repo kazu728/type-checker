@@ -11,6 +11,6 @@ https://jaked.org/blog/2021-09-07-Reconstructing-TypeScript-part-0
 - [x] Subtyping
 - [x] Singletons
 - [x] Operators
-- [ ] Union
+- [x] Union
 - [ ] Intersection
 - [ ] Narrowing

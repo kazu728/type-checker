@@ -240,6 +240,8 @@ pub fn is_subtype(a: &Type, b: &Type) -> bool {
         (Type::Singleton(SingletonProp { base, value }), Type::String) => {
             Type::is_string(&base) && matches!(value, Primitive::String(_))
         }
+        (Type::Union(types), b) => types.iter().all(|t| is_subtype(t, b)),
+        (_, Type::Union(types)) => types.iter().any(|t| is_subtype(a, t)),
 
         _ => false,
     }
