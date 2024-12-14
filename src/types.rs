@@ -11,6 +11,8 @@ pub enum Type {
     Singleton(SingletonProp),
     Never,
     Union(Vec<Type>),
+    Unknown,
+    Intersection(Vec<Type>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -123,6 +125,8 @@ impl Type {
             Type::Singleton(props) => Type::to_string_singleton(props),
             Type::Never => "never".to_string(),
             Type::Union(types) => Type::to_string_union(types),
+            Type::Unknown => "unknown".to_string(),
+            Type::Intersection(types) => Type::to_string_intersection(types),
         }
     }
 
@@ -148,6 +152,11 @@ impl Type {
         types_str.join(" | ")
     }
 
+    fn to_string_intersection(types: &Vec<Type>) -> String {
+        let types_str: Vec<String> = types.iter().map(|t| t.to_string()).collect();
+        types_str.join(" & ")
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Type::Null => false,
@@ -163,6 +172,8 @@ impl Type {
             },
             Type::Never => false,
             Type::Union(types) => types.iter().any(|t| t.is_truthy()),
+            Type::Unknown => false,
+            Type::Intersection(types) => types.iter().all(|t| t.is_truthy()),
         }
     }
 

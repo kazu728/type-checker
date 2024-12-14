@@ -35,6 +35,28 @@ pub fn union(types: Vec<Type>) -> Type {
     }
 }
 
+pub fn distribute_union(types: Vec<Type>) -> Vec<Vec<Type>> {
+    types.into_iter().fold(vec![vec![]], |acc, t| {
+        acc.into_iter()
+            .flat_map(|current_combination| match &t {
+                Type::Union(union_types) => union_types
+                    .into_iter()
+                    .map(|arm| {
+                        let mut expanded_combination = current_combination.clone();
+                        expanded_combination.push(arm.clone());
+                        expanded_combination
+                    })
+                    .collect::<Vec<_>>(),
+                _ => {
+                    let mut expanded_combination = current_combination.clone();
+                    expanded_combination.push(t.clone());
+                    vec![expanded_combination]
+                }
+            })
+            .collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::types::*;
@@ -111,6 +133,50 @@ mod tests {
 
         for (input, expected) in case {
             assert_eq!(union(input), expected);
+        }
+    }
+
+    #[test]
+    fn test_distribute_union() {
+        let case = vec![(
+            vec![
+                Type::Union(vec![
+                    Type::Number,
+                    Type::String,
+                    Type::Singleton(SingletonProp {
+                        base: Box::new(Type::String),
+                        value: Primitive::String("foo".to_string()),
+                    }),
+                ]),
+                Type::Union(vec![Type::String, Type::Boolean]),
+                Type::String,
+            ],
+            vec![
+                vec![Type::Number, Type::String, Type::String],
+                vec![Type::Number, Type::Boolean, Type::String],
+                vec![Type::String, Type::String, Type::String],
+                vec![Type::String, Type::Boolean, Type::String],
+                vec![
+                    Type::Singleton(SingletonProp {
+                        base: Box::new(Type::String),
+                        value: Primitive::String("foo".to_string()),
+                    }),
+                    Type::String,
+                    Type::String,
+                ],
+                vec![
+                    Type::Singleton(SingletonProp {
+                        base: Box::new(Type::String),
+                        value: Primitive::String("foo".to_string()),
+                    }),
+                    Type::Boolean,
+                    Type::String,
+                ],
+            ],
+        )];
+
+        for (input, expected) in case {
+            assert_eq!(distribute_union(input), expected);
         }
     }
 }
